@@ -1,26 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import "./App.css";
-
-
-const Buffer = require("buffer").Buffer
+import io from 'socket.io-client';
+import { sendMessage } from './helper';
 
 const VideoUploader = () => {
     const [uploading, setUploading] = useState(false);
     const [uploaded, setUploaded] = useState(false);
     const [videoSrc, setVideoSrc] = useState(null);
     const wsRef = useRef()
-
+    const videoRef = useRef(null);
+    // const socket = io('http://localhost:8080');
 
     wsRef.current = new WebSocket('ws://localhost:3002');
-
-
-
     useEffect(() => {
-
         wsRef.current.onmessage = (event) => {
-            console.log(JSON.parse(event.data))
+            handleUploadedVideo(event.data)
         };
-
     }, [])
 
 
@@ -35,7 +30,7 @@ const VideoUploader = () => {
 
         setUploading(true);
         try {
-            const response = await fetch('http://192.168.1.18:3002/upload', {
+            const response = await fetch('http://192.168.1.5:3002/upload', {
                 method: 'POST',
                 body: formData,
             });
@@ -67,13 +62,70 @@ const VideoUploader = () => {
         </div>
     }
 
+    const handleUploadedVideo = (message) => {
+        const resp = JSON.parse(message)
+        console.log(message, videoRef.current)
+
+        if(resp.type === "video_uploaded"){
+            setVideoSrc(resp.url)
+        }
+        else if (resp.type === "video_started_1"){
+            videoRef.current.play()
+        }
+        else if (resp.type === "video_paused_1"){
+            videoRef.current.pause()
+        }
+        else if (resp.type === "video_seek_1"){
+            videoRef.current.currentTime = resp.currentTime
+        }
+    }
+
+    useEffect(() => {
+        try {
+        const videoPlayer = videoRef.current;
+
+        console.log(videoPlayer, wsRef)
+        const handlePause = () => {
+          if (videoPlayer) {
+            sendMessage(wsRef.current, { type:"video_paused_1",currentTime: videoPlayer.currentTime } )
+          }
+        };
+    
+        const handlePlay = () => {
+            sendMessage(wsRef.current, { type:"video_started_1",currentTime: videoPlayer.currentTime } )
+        };
+
+        const handleSeeking = () => {
+            sendMessage(wsRef.current, { type:"video_seek_1",currentTime: videoPlayer.currentTime } )
+          };
+    
+        if (videoPlayer) {
+          videoPlayer.addEventListener('pause', handlePause);
+          videoPlayer.addEventListener('play', handlePlay);
+          videoPlayer.addEventListener('seeking', handleSeeking);
+
+        }
+    
+        return () => {
+          if (videoPlayer) {
+            videoPlayer.removeEventListener('pause', handlePause);
+            videoPlayer.removeEventListener('play', handlePlay);
+            videoPlayer.removeEventListener('seeking', handleSeeking);
+          }
+        };
+
+    } catch (error) {
+     console.log(error)       
+    }
+      }, [videoSrc]);
     return (
         <div className="container">
             <div className="video-wrapper">
+                
                 {
                     videoSrc ?
-                        <video controls className="video">
-                            <source src="your_video_source.mp4" type="video/mp4" />
+                        <video ref={videoRef} controls={true} controlsList="nodownload" className="video">
+                            <source src={videoSrc} type="video/mp4" />
                             Your browser does not support the video tag.
                         </video>
                         :
